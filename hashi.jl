@@ -62,7 +62,7 @@ Solves the Hashiwokakero puzzle and reports the runtime in seconds.
 # Arguments
 - `file`: name of the file to read
 """
-function solve(file::String)
+function solve(file::String, external::Boolean = false)
     islands, intersections = readFile(file)
     n = length(islands)
 
@@ -131,6 +131,12 @@ function solve(file::String)
             end
             @constraint(model, y[e,l+1] <= neighboring_edges + y[e, l])
         end
+    end
+
+    if external
+        path = splitext(basename(file))[1]
+        JuMP.write_to_file(model, "$path.mps")
+        return
     end
 
     optimize!(model)
