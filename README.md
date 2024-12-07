@@ -46,6 +46,6 @@ Inversily, if an edge $e = (v, w)$ can be reached from $s$ in at most $t$ steps,
 \left\{\forall e \in E \\, \forall t \in \{1, \ldots, m - 1\} \, | \, y_{e, t + 1} \leq y_{e, t} + \sum_{e^{\prime} \in N_v, e^{\prime} \neq e} y_{e^{\prime}, t} + \sum_{e^{\prime} \in N_w, e^{\prime} \neq e} y_{e^{\prime}, t}\right\}
 ```
 
-So we have completed the BFS encoding and can now ensure with $\\left\\{\forall e \in E \\, | \\, x_{e, 1} = y_{e, m}\\right\\}$ that all edges are reachable from the source edge in at most $m - 1$ steps. Since with $m$ edges no shortest path can be longer than $m - 1$ steps, this is equivalent to all bridges being connected. This conclused the encoding of the Hashiwokakero puzzle.
+We have thus completed the BFS encoding and can now use $\\left\\{\forall e \in E \\, | \\, x_{e, 1} = y_{e, m}\\right\\}$ to ensure that all edges are reachable from the starting edge in at most $m - 1$ steps. Since with $m$ edges no shortest path can be longer than $m - 1$ steps, this is equivalent to all bridges being connected. This concludes the encoding of the Hashiwokakero puzzle.
 
 (c) Mia Müßig
