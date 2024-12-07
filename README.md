@@ -20,14 +20,32 @@ x_{e, k} = \begin{cases}
 \end{cases}
 ```
 
-By our definition we know $x_{e, 2} \implies x_{e, 1}$, which we encode as $\\{\forall e \in E \\, | \\, x_{e, 2} \leq x_{e, 1}\\}$. And for all pairs $e, e^{\prime} \in E$ which intersect, we use $x_{e, 1} + x_{e^{\prime}, 1} \leq 1$ to enforce that only on one of the two edges bridges can be built.
+By our definition we know $x_{e, 2} \implies x_{e, 1}$, which we encode as $\\left\\{\forall e \in E \\, | \\, x_{e, 2} \leq x_{e, 1}\\right\\}$. And for all pairs $e, e^{\prime} \in E$ which intersect, we use $x_{e, 1} + x_{e^{\prime}, 1} \leq 1$ to enforce that only on one of the two edges bridges can be built.
 
 To encode that the number of bridges connecting to island $v$ is equal to its number $k$, we simply sum over its adjacent edges $N_v$:
 ```math
-\sum_{e \in N_v} x_{e, 1} + \sum_{e \in N_v} x_{e, 2} = k
+\left\{\forall v \in I \, | \, \sum_{e \in N_v} x_{e, 1} + \sum_{e \in N_v} x_{e, 2} = k\right\}
 ```
 
-This leaves only the most difficult constraint, which is that all islands must be connected to each other.
+This leaves only the most difficult constraint, namely that all islands must be connected. The first trick is to encode the constraint that all bridges are connected instead, which is equivalent since each island is connected to at least one bridge by our previous constraints.
 
+For this we translate the BFS search procedure on edges into the model using the binary variable $y \in \\{0, 1\\}^{m \times m}$:
+```math
+y_{e, t} = \begin{cases}
+1, & \text{if edge $e$ can be reached from source edge $s$ in at most $t - 1$ steps}\\ 0, & \text{otherwise}
+\end{cases}
+```
+
+Source edges are the edges reachable in zero steps, so we ensure with $\sum_{e \in E} y_{e, 1} = 1$ that only one source edge exists. We also know that if an edge $e$ can be reached from $s$ in at most $t - 1$ steps, then it can also be reached in at most $t$ steps, which is reflected by:
+```math
+\{\forall e \in E \\, \forall t \in \{1, \ldots, m - 1\} \, | \, y_{e, t} \leq y_{e, t+1}\}
+```
+
+Inversily, if an edge $e = (v, w)$ can be reached from $s$ in at most $t$ steps, then either itself or one of its adjacent edges $\in N_v \cup N_w$ can be reached in at most $t - 1$ steps:
+```math
+\left\{\forall e \in E \\, \forall t \in \{1, \ldots, m - 1\} \, | \, y_{e, t + 1} \leq y_{e, t} + \sum_{e^{\prime} \in N_v, e^{\prime} \neq e} y_{e^{\prime}, t} + \sum_{e^{\prime} \in N_w, e^{\prime} \neq e} y_{e^{\prime}, t}\right\}
+```
+
+So we have completed the BFS encoding and can now ensure with $\\left\\{\forall e \in E \\, | \\, x_{e, 1} = y_{e, m}\\right\\}$ that all edges are reachable from the source edge in at most $m - 1$ steps. Since with $m$ edges no shortest path can be longer than $m - 1$ steps, this is equivalent to all bridges being connected. This conclused the encoding of the Hashiwokakero puzzle.
 
 (c) Mia Müßig
