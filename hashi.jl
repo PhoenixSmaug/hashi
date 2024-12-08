@@ -30,7 +30,7 @@ Benchmark the Hashiwokakero solver for instance data set
 # Arguments
 - `pattern`: regex for all files
 """
-function benchmark(pattern::String)
+function benchmark(pattern::String, lazy = true)
     # Get all files matching the pattern
     dir_path = dirname(pattern)
     base_name = basename(pattern)
@@ -40,12 +40,12 @@ function benchmark(pattern::String)
     # Solve each instance and collect the times
     times = Float64[]
     for file in full_paths
-        try
-            solve_time = solve(file)
+        #try
+            solve_time = lazy ? solveLazy(file) : solve(file)
             push!(times, solve_time)
-        catch e
-            println("Error processing file $file: $e")
-        end
+        #catch e
+            #println("Error processing file $file: $e")
+        #end
     end
 
     avg_time = isempty(times) ? 0.0 : mean(times)
@@ -57,12 +57,12 @@ end
 """
 solve(file)
 
-Solves the Hashiwokakero puzzle and reports the runtime in seconds.
+Solves the Hashiwokakero puzzle using a polynomial encoding and reports the runtime in seconds.
 
 # Arguments
 - `file`: name of the file to read
 """
-function solve(file::String, external::Boolean = false)
+function solve(file::String, external::Bool = false)
     islands, intersections = readFile(file)
     n = length(islands)
 
@@ -152,6 +152,253 @@ function solve(file::String, external::Boolean = false)
     return round(solve_time(model); digits = 3)
 end
 
+
+"""
+solveLazy(file)
+
+Solves the Hashiwokakero puzzle using lazy constraints and reports the runtime in seconds.
+
+# Arguments
+- `file`: name of the file to read
+"""
+function solveLazy(file::String)
+    islands, intersections = readFile(file)
+    n = length(islands)
+
+    e = 0
+    edgeMap = Dict{Int64, Tuple{Int64, Int64}}()  # (edge id) -> (id of two islands connecting edge)
+    revEdgeMap = Dict{Tuple{Int64, Int64}, Int64}()  # (id of two islands connecting edge) -> (edge id)
+    for i in 1:n
+        for j in islands[i].neighbours
+            if i < j  # count edge only once
+                e += 1
+                edgeMap[e] = (i, j)
+                revEdgeMap[(i, j)] = e
+            end
+        end
+    end
+    m = length(edgeMap)
+
+    model = Model(Gurobi.Optimizer)
+    @variable(model, x[1:m, 1:2], Bin)  # x[e, l] iff at least l bridges are built on edge e
+
+    # by defintion x[e, 2] implies x[e, 1]
+    @constraint(model, [e=1:m], x[e, 2] <= x[e, 1])
+
+    # 1) Correct bridge count
+    for i in 1:n
+        bridge_sum = AffExpr(0)  # Initialize empty expression
+        for j in islands[i].neighbours
+            if i < j  # edge exists in forward direction
+                e = revEdgeMap[(i,j)]
+                bridge_sum += x[e,1] + x[e,2]
+            else  # edge exists in reverse direction
+                e = revEdgeMap[(j,i)]
+                bridge_sum += x[e,1] + x[e,2]
+            end
+        end
+        @constraint(model, bridge_sum == islands[i].k)
+    end
+
+    # 2) No intersections
+    for (a,b,c,d) in intersections
+        # Get the correct edge ids, ensuring we look up in the right order
+        e1 = a < b ? revEdgeMap[(a,b)] : revEdgeMap[(b,a)]
+        e2 = c < d ? revEdgeMap[(c,d)] : revEdgeMap[(d,c)]
+        @constraint(model, x[e1,1] + x[e2,1] <= 1)
+    end
+
+    totalTime = 0
+    while true
+        # solve current model
+        optimize!(model)
+        totalTime += solve_time(model)
+
+        if termination_status(model) != MOI.OPTIMAL
+            println("Problem is unsatisfiable.")
+            break
+        end
+
+        """
+        # edges separating a maximal connected component from the rest
+        cut = bfs(islands, value.(x), edgeMap, revEdgeMap)
+
+        if isempty(cut)
+            # all islands connected
+            println("Solution found:")
+            prettyPrint(islands, value.(x), edgeMap)
+            break
+        end
+
+        # in next iteration at least one edge in cut must be used
+        @constraint(model, sum(x[e, 1] for e in cut) >= 1)
+        """
+
+        cuts = bfsAll(islands, value.(x), edgeMap, revEdgeMap)
+
+        if length(cuts) == 1 && isempty(cuts[1])
+            # all islands connected
+            println("Solution found:")
+            prettyPrint(islands, value.(x), edgeMap)
+            break
+        end
+
+        for cut in cuts
+            @constraint(model, sum(x[e, 1] for e in cut) >= 1)
+        end
+    end
+
+    @assert(isConnected(islands, value.(x), edgeMap))
+
+    return round(totalTime; digits = 3)
+end
+
+function isConnected(islands::Vector{Island}, x::Array{Float64,2}, edgeMap::Dict{Int64, Tuple{Int64, Int64}})
+    n = length(islands)
+    m = length(edgeMap)
+
+    # Create adjacency list representation based on solution x
+    adj = Dict(i => Int[] for i in 1:n)
+    for e in 1:m
+        if x[e,1] > 0.5  # Edge exists in solution
+            (i, j) = edgeMap[e]
+            push!(adj[i], j)
+            push!(adj[j], i)
+        end
+    end
+
+    # Start BFS from random island
+    start = rand(1:n)
+    visited = Set{Int}([])
+    queue = [start]
+    push!(visited, start)
+
+    while !isempty(queue)
+        current = popfirst!(queue)
+        for neighbor in adj[current]
+            if !(neighbor in visited)
+                push!(visited, neighbor)
+                push!(queue, neighbor)
+            end
+        end
+    end
+
+    return length(visited) == n
+end
+
+"""
+bfs(islands, x, edgeMap, revEdgeMap)
+
+# Arguments
+- `islands`: vector of island structs
+- `x`: solution of ILP model
+- `edgeMap`: map edge id to endpoint ids
+- `revEdgeMap`: map endpoint ids to edge id
+"""
+function bfs(islands::Vector{Island}, x::Array{Float64,2}, edgeMap::Dict{Int64, Tuple{Int64, Int64}}, revEdgeMap::Dict{Tuple{Int64, Int64}, Int64})
+    n = length(islands)
+    m = length(edgeMap)
+
+    # Create adjacency list representation based on solution x
+    adj = Dict(i => Int[] for i in 1:n)
+    for e in 1:m
+        if x[e,1] > 0.5  # Edge exists in solution
+            (i, j) = edgeMap[e]
+            push!(adj[i], j)
+            push!(adj[j], i)
+        end
+    end
+
+    # Start BFS from random island
+    start = rand(1:n)
+    visited = Set{Int}([])
+    queue = [start]
+    push!(visited, start)
+
+    while !isempty(queue)
+        current = popfirst!(queue)
+        for neighbor in adj[current]
+            if !(neighbor in visited)
+                push!(visited, neighbor)
+                push!(queue, neighbor)
+            end
+        end
+    end
+
+    # Find all edges that connect visited nodes to unvisited nodes
+    cut_edges = Int[]
+    for i in visited
+        for j in islands[i].neighbours
+            # Check if this neighbor is not visited
+            if !(j in visited)
+                # Get the edge id, ensuring correct order of islands
+                edge_id = i < j ? revEdgeMap[(i,j)] : revEdgeMap[(j,i)]
+                push!(cut_edges, edge_id)
+            end
+        end
+    end
+
+    return cut_edges
+end
+
+function bfsAll(islands::Vector{Island}, x::Array{Float64,2}, edgeMap::Dict{Int64, Tuple{Int64, Int64}}, revEdgeMap::Dict{Tuple{Int64, Int64}, Int64})
+    n = length(islands)
+    m = length(edgeMap)
+
+    # Create adjacency list representation based on solution x
+    adj = Dict(i => Int[] for i in 1:n)
+    for e in 1:m
+        if x[e,1] > 0.5  # Edge exists in solution
+        (i, j) = edgeMap[e]
+        push!(adj[i], j)
+        push!(adj[j], i)
+        end
+    end
+
+    # Keep track of all islands we've seen
+    all_visited = Set{Int}()
+    # Store cuts for each component
+    component_cuts = Vector{Int}[]
+
+    while length(all_visited) < n
+        # Start new component from random unvisited island
+        unvisited = setdiff(1:n, all_visited)
+        start = rand(unvisited)
+
+        # BFS for this component
+        component = Set{Int}([])
+        queue = [start]
+        push!(component, start)
+
+        while !isempty(queue)
+            current = popfirst!(queue)
+            for neighbor in adj[current]
+                if !(neighbor in component)
+                    push!(component, neighbor)
+                    push!(queue, neighbor)
+                end
+            end
+        end
+
+        # Find cut edges for this component
+        cut_edges = Int[]
+        for i in component
+            for j in islands[i].neighbours
+                if !(j in component)
+                    edge_id = i < j ? revEdgeMap[(i,j)] : revEdgeMap[(j,i)]
+                    push!(cut_edges, edge_id)
+                end
+            end
+        end
+
+        # Add this component's cut to our results
+        push!(component_cuts, cut_edges)
+        # Add component islands to all_visited
+        union!(all_visited, component)
+    end
+
+    return component_cuts
+end
 
 """
 prettyPrint(islands, x)
