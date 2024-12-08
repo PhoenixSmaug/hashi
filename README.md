@@ -9,7 +9,7 @@
 - Each bridge connects two islands, and there can be one or two bridges between any pair of islands.
 - All islands must be connected in a single network, meaning every island must be reachable from every other island.
 
-The problem was proven to be NP-complete using a reduction of Hamiltonian cycles in unit distance graphs [[1]](https://doi.org/10.1016/j.ipl.2009.07.017). It has already been encoded as a Integer Programming problem before [[2]](https://arxiv.org/abs/1905.00973), but the formulation there uses $O(2^n)$ inequalities to encode the connectivity of the $n$ islands and therefore requires a stepwise solution process with dynamically generated constraints. Here, a new model is presented that requires only $O(n^2)$ constraints in total. A Julia implementation using the JuMP framework is also provided, allowing the model to be solved either directly using the ILP solver [Gurobi](https://www.gurobi.com/) or as an the exported MPS file with SAT-based solvers such as [Exact](https://gitlab.com/nonfiction-software/exact) and Google's [OR-Tools](https://developers.google.com/optimization).
+The problem was proven to be NP-complete using a reduction of Hamiltonian cycles in unit distance graphs [[1]](https://doi.org/10.1016/j.ipl.2009.07.017). It has already been encoded as a Integer Programming problem before [[2]](https://arxiv.org/abs/1905.00973), but the formulation there uses $O(2^n)$ inequalities to encode the connectivity of the $n$ islands and therefore requires a stepwise solution process with dynamically generated constraints. Here, a new model is presented that requires only $O(n^2)$ constraints in total. A Julia implementation using the JuMP framework is also provided, allowing the model to be solved either directly using the ILP solver [Gurobi](https://www.gurobi.com/) or as an the exported MPS file with SAT-based solvers such as [Exact](https://gitlab.com/nonfiction-software/exact) and Google's [OR-Tools](https://developers.google.com/optimization). In addition, the combination with lazy constraints enables the solver to outperform currently existing solvers.
 
 ### ILP Model
 
@@ -50,8 +50,17 @@ We have thus completed the BFS encoding and can now use $\\left\\{\forall e \in 
 
 ### Lazy Constraints
 
-In practice, however, the polynomial size connectivity encoding is slower than the dynamically constructed lazy connectivity constraints presented in [[2]](https://arxiv.org/abs/1905.00973). Altough we can obtain a highly efficient Hashiwokakero solver if we combine the based model presented here with lazy connectivity constraints, which is implemented as `solveLazy(file::String)` in the Julia code. To demonstrate that, we compare the runtime of `solveLazy` with the runtime of the CLLV model from [[2]](https://arxiv.org/abs/1905.00973) on the common [dataset](https://w1.cirrelt.ca/~vidalt/resources/Hashi_Puzzles.zip) they provided.
+In practice, however, the polynomial size connectivity encoding is slower than the dynamically constructed lazy connectivity constraints presented in [[2]](https://arxiv.org/abs/1905.00973). Altough we can obtain a highly efficient Hashiwokakero solver if we combine the based model presented here with lazy connectivity constraints, which is implemented as `solveLazy(file::String)` in the Julia code. To demonstrate that, we compare the average runtime our lazy-solve with the runtime of the CLLV model from [[2]](https://arxiv.org/abs/1905.00973) on the common [dataset](https://w1.cirrelt.ca/~vidalt/resources/Hashi_Puzzles.zip) they provided.
 
-[TODO]
+<div align="center">
+
+| **Method**       | **n = 100** | **n = 200** | **n = 300** | **n = 400** |
+|:-----------------:|:-----------:|:-----------:|:-----------:|:-----------:|
+| **CLLV**         |    0.16s    |    1.13s    |    6.32s    |   36.94s    |
+| **lazy-solve**   |   <0.01s    |    0.04s    |    0.12s    |    1.48s    |
+
+</div>
+
+As the table shows, the new model represents a drastic improvement in performance for all instance sizes.
 
 (c) Mia Müßig
