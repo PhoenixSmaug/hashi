@@ -40,12 +40,12 @@ function benchmark(pattern::String, lazy = true)
     # Solve each instance and collect the times
     times = Float64[]
     for file in full_paths
-        #try
+        try
             solve_time = lazy ? solveLazy(file) : solve(file)
             push!(times, solve_time)
-        #catch e
-            #println("Error processing file $file: $e")
-        #end
+        catch e
+            println("Error processing file $file: $e")
+        end
     end
 
     avg_time = isempty(times) ? 0.0 : mean(times)
@@ -208,51 +208,48 @@ function solveLazy(file::String)
         @constraint(model, x[e1,1] + x[e2,1] <= 1)
     end
 
-    totalTime = 0
-    while true
-        # solve current model
-        optimize!(model)
-        totalTime += solve_time(model)
-
-        if termination_status(model) != MOI.OPTIMAL
-            println("Problem is unsatisfiable.")
-            break
+    # 3) lazy ccnnectivity constraints
+    function lazy_callback(cb_data)
+        status = callback_node_status(cb_data, model)
+        if status != MOI.CALLBACK_NODE_STATUS_INTEGER
+            return  # Only run at integer solutions
         end
 
-        """
-        # edges separating a maximal connected component from the rest
-        cut = bfs(islands, value.(x), edgeMap, revEdgeMap)
-
-        if isempty(cut)
-            # all islands connected
-            println("Solution found:")
-            prettyPrint(islands, value.(x), edgeMap)
-            break
-        end
-
-        # in next iteration at least one edge in cut must be used
-        @constraint(model, sum(x[e, 1] for e in cut) >= 1)
-        """
-
-        cuts = bfsAll(islands, value.(x), edgeMap, revEdgeMap)
+        cuts = bfsAll(islands, callback_value.(cb_data, model[:x]), edgeMap, revEdgeMap)
 
         if length(cuts) == 1 && isempty(cuts[1])
             # all islands connected
-            println("Solution found:")
-            prettyPrint(islands, value.(x), edgeMap)
-            break
+            return
         end
 
         for cut in cuts
-            @constraint(model, sum(x[e, 1] for e in cut) >= 1)
+            con = @build_constraint(sum(model[:x][e, 1] for e in cut) >= 1)
+            MOI.submit(model, MOI.LazyConstraint(cb_data), con)
         end
+
+        return
     end
+
+    set_attribute(model, MOI.LazyConstraintCallback(), lazy_callback)
+    optimize!(model)
 
     @assert(isConnected(islands, value.(x), edgeMap))
 
-    return round(totalTime; digits = 3)
+    return round(solve_time(model); digits = 3)
 end
 
+
+"""
+bfsAll(islands, x, edgeMap, revEdgeMap)
+
+Check if all islands are connected.
+
+# Arguments
+- `islands`: vector of island structs
+- `x`: solution of ILP model
+- `edgeMap`: map edge id to endpoint ids
+- `revEdgeMap`: map endpoint ids to edge id
+"""
 function isConnected(islands::Vector{Island}, x::Array{Float64,2}, edgeMap::Dict{Int64, Tuple{Int64, Int64}})
     n = length(islands)
     m = length(edgeMap)
@@ -260,15 +257,14 @@ function isConnected(islands::Vector{Island}, x::Array{Float64,2}, edgeMap::Dict
     # Create adjacency list representation based on solution x
     adj = Dict(i => Int[] for i in 1:n)
     for e in 1:m
-        if x[e,1] > 0.5  # Edge exists in solution
+        if x[e,1] > 0.5
             (i, j) = edgeMap[e]
             push!(adj[i], j)
             push!(adj[j], i)
         end
     end
 
-    # Start BFS from random island
-    start = rand(1:n)
+    start = 1
     visited = Set{Int}([])
     queue = [start]
     push!(visited, start)
@@ -286,8 +282,11 @@ function isConnected(islands::Vector{Island}, x::Array{Float64,2}, edgeMap::Dict
     return length(visited) == n
 end
 
+
 """
-bfs(islands, x, edgeMap, revEdgeMap)
+bfsAll(islands, x, edgeMap, revEdgeMap)
+
+Return the respective edge cuts for all connected components.
 
 # Arguments
 - `islands`: vector of island structs
@@ -295,52 +294,6 @@ bfs(islands, x, edgeMap, revEdgeMap)
 - `edgeMap`: map edge id to endpoint ids
 - `revEdgeMap`: map endpoint ids to edge id
 """
-function bfs(islands::Vector{Island}, x::Array{Float64,2}, edgeMap::Dict{Int64, Tuple{Int64, Int64}}, revEdgeMap::Dict{Tuple{Int64, Int64}, Int64})
-    n = length(islands)
-    m = length(edgeMap)
-
-    # Create adjacency list representation based on solution x
-    adj = Dict(i => Int[] for i in 1:n)
-    for e in 1:m
-        if x[e,1] > 0.5  # Edge exists in solution
-            (i, j) = edgeMap[e]
-            push!(adj[i], j)
-            push!(adj[j], i)
-        end
-    end
-
-    # Start BFS from random island
-    start = rand(1:n)
-    visited = Set{Int}([])
-    queue = [start]
-    push!(visited, start)
-
-    while !isempty(queue)
-        current = popfirst!(queue)
-        for neighbor in adj[current]
-            if !(neighbor in visited)
-                push!(visited, neighbor)
-                push!(queue, neighbor)
-            end
-        end
-    end
-
-    # Find all edges that connect visited nodes to unvisited nodes
-    cut_edges = Int[]
-    for i in visited
-        for j in islands[i].neighbours
-            # Check if this neighbor is not visited
-            if !(j in visited)
-                # Get the edge id, ensuring correct order of islands
-                edge_id = i < j ? revEdgeMap[(i,j)] : revEdgeMap[(j,i)]
-                push!(cut_edges, edge_id)
-            end
-        end
-    end
-
-    return cut_edges
-end
-
 function bfsAll(islands::Vector{Island}, x::Array{Float64,2}, edgeMap::Dict{Int64, Tuple{Int64, Int64}}, revEdgeMap::Dict{Tuple{Int64, Int64}, Int64})
     n = length(islands)
     m = length(edgeMap)
@@ -348,7 +301,7 @@ function bfsAll(islands::Vector{Island}, x::Array{Float64,2}, edgeMap::Dict{Int6
     # Create adjacency list representation based on solution x
     adj = Dict(i => Int[] for i in 1:n)
     for e in 1:m
-        if x[e,1] > 0.5  # Edge exists in solution
+        if x[e,1] > 0.5
         (i, j) = edgeMap[e]
         push!(adj[i], j)
         push!(adj[j], i)
@@ -357,13 +310,16 @@ function bfsAll(islands::Vector{Island}, x::Array{Float64,2}, edgeMap::Dict{Int6
 
     # Keep track of all islands we've seen
     all_visited = Set{Int}()
-    # Store cuts for each component
     component_cuts = Vector{Int}[]
 
     while length(all_visited) < n
-        # Start new component from random unvisited island
-        unvisited = setdiff(1:n, all_visited)
-        start = rand(unvisited)
+        # Start new component from first unvisited island
+        start = 0
+        for i in 1 : n
+            if !(i in all_visited)
+                start = i
+            end
+        end
 
         # BFS for this component
         component = Set{Int}([])
@@ -391,14 +347,13 @@ function bfsAll(islands::Vector{Island}, x::Array{Float64,2}, edgeMap::Dict{Int6
             end
         end
 
-        # Add this component's cut to our results
         push!(component_cuts, cut_edges)
-        # Add component islands to all_visited
         union!(all_visited, component)
     end
 
     return component_cuts
 end
+
 
 """
 prettyPrint(islands, x)
@@ -529,5 +484,10 @@ function readFile(file::String)
 
     return islands, intersections
 end
+
+# benchmark("dataset/100/")
+# benchmark("dataset/200/")
+# benchmark("dataset/300/")
+# benchmark("dataset/400/")
 
 # (c) Mia Muessig
