@@ -1,4 +1,4 @@
-# A Hashiwokakero solver using Integer Programming
+# A highly efficient Hashiwokakero solver
 
 ### Introduction
 
@@ -46,6 +46,12 @@ Inversily, if an edge $e = (v, w)$ can be reached from $s$ in at most $t$ steps,
 \left\{\forall e \in E \\, \forall t \in \{1, \ldots, m - 1\} \, | \, y_{e, t + 1} \leq y_{e, t} + \sum_{e^{\prime} \in N_v, e^{\prime} \neq e} y_{e^{\prime}, t} + \sum_{e^{\prime} \in N_w, e^{\prime} \neq e} y_{e^{\prime}, t}\right\}
 ```
 
-We have thus completed the BFS encoding and can now use $\\left\\{\forall e \in E \\, | \\, x_{e, 1} = y_{e, m}\\right\\}$ to ensure that all edges are reachable from the starting edge in at most $m - 1$ steps. Since with $m$ edges no shortest path can be longer than $m - 1$ steps, this is equivalent to all bridges being connected. This concludes the encoding of the Hashiwokakero puzzle.
+We have thus completed the BFS encoding and can now use $\\left\\{\forall e \in E \\, | \\, x_{e, 1} = y_{e, m}\\right\\}$ to ensure that all edges are reachable from the starting edge in at most $m - 1$ steps. Since with $m$ edges no shortest path can be longer than $m - 1$ steps, this is equivalent to all bridges being connected. This concludes the encoding of the Hashiwokakero puzzle, which is implemented as `solve(file::String)` in the Julia code.
+
+### Lazy Constraints
+
+In practice, however, the polynomial size connectivity encoding is slower than the dynamically constructed lazy connectivity constraints presented in [[2]](https://arxiv.org/abs/1905.00973). Altough we can obtain a highly efficient Hashiwokakero solver if we combine the based model presented here with lazy connectivity constraints, which is implemented as `solveLazy(file::String)` in the Julia code. To demonstrate that, we compare the runtime of `solveLazy` with the runtime of the CLLV model from [[2]](https://arxiv.org/abs/1905.00973) on the common [dataset](https://w1.cirrelt.ca/~vidalt/resources/Hashi_Puzzles.zip) they provided.
+
+[TODO]
 
 (c) Mia Müßig
