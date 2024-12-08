@@ -50,7 +50,7 @@ We have thus completed the BFS encoding and can now use $\\left\\{\forall e \in 
 
 ### Lazy Constraints
 
-In practice, however, the polynomial size connectivity encoding is slower than the dynamically constructed lazy connectivity constraints presented in [[2]](https://arxiv.org/abs/1905.00973). Altough we can obtain a highly efficient Hashiwokakero solver if we combine the based model presented here with lazy connectivity constraints, which is implemented as `solveLazy(file::String)` in the Julia code. To demonstrate that, we compare the average runtime our lazy-solve with the runtime of the CLLV model from [[2]](https://arxiv.org/abs/1905.00973) on the common [dataset](https://w1.cirrelt.ca/~vidalt/resources/Hashi_Puzzles.zip) they provided.
+In practice, however, the polynomial size connectivity encoding is slower than the dynamically constructed lazy connectivity constraints presented in [[2]](https://arxiv.org/abs/1905.00973). Altough we can obtain a highly efficient Hashiwokakero solver if we combine the based model presented here with lazy connectivity constraints, which is implemented as `solveLazy(file::String)` in the Julia code. To demonstrate that, we compare the average runtime of our lazy-solve with the runtime of the CLLV model from [[2]](https://arxiv.org/abs/1905.00973) on the common [dataset](https://w1.cirrelt.ca/~vidalt/resources/Hashi_Puzzles.zip) they provided.
 
 <div align="center">
 
